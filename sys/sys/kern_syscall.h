@@ -1,4 +1,4 @@
-./*
+/*
  * KERN_SYSCALL.H	- Split syscall prototypes
  *
  * Copyright (c) 2003 David P. Reese, Jr. <daver@gomerbud.com>
@@ -33,6 +33,7 @@
 #error "This file should not be included by userland programs."
 #endif
 
+#include <sys/timespec.h>
 #include <sys/uio.h>
 
 #define DUP_FIXED	0x1	/* Copy to specific fd even if in use */

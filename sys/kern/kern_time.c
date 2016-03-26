@@ -431,26 +431,31 @@ sys_getcpuclockid(struct getcpuclockid_args *uap)
 
 int sys_timer_create(struct timer_create_args *uap)
 {
+	kprintf("timer create\n");
 	return ENOSYS;
 }
 
 int sys_timer_delete(struct timer_delete_args *uap)
 {
+	kprintf("timer delete\n");
 	return ENOSYS;
 }
 
 int sys_timer_gettime(struct timer_gettime_args *uap)
 {
+	kprintf("timer gettime\n");
 	return ENOSYS;
 }
 
 int sys_timer_settime(struct timer_settime_args *uap)
 {
+	kprintf("timer settime\n");
 	return ENOSYS;
 }
 
 int sys_timer_getoverrun(struct timer_getoverrun_args *uap)
 {
+	kprintf("timer getoverrun\n");
 	return ENOSYS;
 }
 
