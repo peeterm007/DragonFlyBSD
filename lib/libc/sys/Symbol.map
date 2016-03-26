@@ -307,6 +307,11 @@ DF406.0 {
 /*  SYSCALLS  */
     kenv;
     ppoll;
+    timer_create;
+    timer_delete;
+    timer_gettime;
+    timer_settime;
+    timer_getoverrun; 
 };
 
 DF408.0 {
@@ -595,6 +600,11 @@ DFprivate_1.0 {
     __sys_sys_checkpoint;
     __sys_sysarch;
     __sys_syscall;
+    __sys_timer_create;
+    __sys_timer_delete;
+    __sys_timer_getoverrun;
+    __sys_timer_gettime;
+    __sys_timer_settime;
     __sys_umask;
     __sys_umtx_sleep;
     __sys_umtx_wakeup;
@@ -894,6 +904,11 @@ DFprivate_1.0 {
     _sys_checkpoint;
     _sysarch;
     _syscall;
+    _timer_create;
+    _timer_delete;
+    _timer_getoverrun;
+    _timer_gettime;
+    _timer_settime;
     _umask;
     _umtx_sleep;
     _umtx_wakeup;
