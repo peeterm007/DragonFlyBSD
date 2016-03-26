@@ -1,4 +1,4 @@
-/*
+./*
  * KERN_SYSCALL.H	- Split syscall prototypes
  *
  * Copyright (c) 2003 David P. Reese, Jr. <daver@gomerbud.com>
@@ -179,6 +179,12 @@ struct uuid *kern_uuidgen(struct uuid *store, size_t count);
 int kern_clock_gettime(clockid_t, struct timespec *);
 int kern_clock_settime(clockid_t, struct timespec *);
 int kern_clock_getres(clockid_t, struct timespec *);
+
+int kern_timer_create(clockid_t, struct sigevent *, int *);
+int kern_timer_delete(int);
+int kern_timer_gettime(int, struct itimerspec *);
+int kern_timer_settime(int, int, struct itimerspec *, struct itimerspec *);
+int kern_timer_getoverrun(int);
 
 /*
  * Prototypes for syscalls in kern/vfs_cache.c
