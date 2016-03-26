@@ -150,6 +150,11 @@ MIASM =  \
 	clock_gettime.o \
 	clock_settime.o \
 	clock_getres.o \
+	timer_create.o \
+	timer_delete.o \
+	timer_settime.o \
+	timer_gettime.o \
+	timer_getoverrun.o \
 	nanosleep.o \
 	minherit.o \
 	rfork.o \

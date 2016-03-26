@@ -160,6 +160,11 @@ union sysunion {
 	struct	clock_gettime_args clock_gettime;
 	struct	clock_settime_args clock_settime;
 	struct	clock_getres_args clock_getres;
+	struct	timer_create_args timer_create;
+	struct	timer_delete_args timer_delete;
+	struct	timer_settime_args timer_settime;
+	struct	timer_gettime_args timer_gettime;
+	struct	timer_getoverrun_args timer_getoverrun;
 	struct	nanosleep_args nanosleep;
 	struct	minherit_args minherit;
 	struct	rfork_args rfork;

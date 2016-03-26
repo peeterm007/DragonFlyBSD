@@ -362,9 +362,9 @@
 			    struct sigevent *evp, int *timerid); }
 236	STD	{ int timer_delete(int timerid); }
 237	STD	{ int timer_settime(int timerid, int flags, \
-			    constr struct itimerspec *value, \
+			    const struct itimerspec *value, \
 			    struct itimerspec *ovalue); }
-238	STD	{ int timer_gettime(int timerid,
+238	STD	{ int timer_gettime(int timerid, \
 			    struct itimerspec *value); }
 239	STD	{ int timer_getoverrun(int timerid); }
 240	STD	{ int nanosleep(const struct timespec *rqtp, \

@@ -1121,6 +1121,42 @@ struct	clock_getres_args {
 	clockid_t	clock_id;	char clock_id_[PAD_(clockid_t)];
 	struct timespec *	tp;	char tp_[PAD_(struct timespec *)];
 };
+struct	timer_create_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	clockid_t	clock_id;	char clock_id_[PAD_(clockid_t)];
+	struct sigevent *	evp;	char evp_[PAD_(struct sigevent *)];
+	int *	timerid;	char timerid_[PAD_(int *)];
+};
+struct	timer_delete_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	timerid;	char timerid_[PAD_(int)];
+};
+struct	timer_settime_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	timerid;	char timerid_[PAD_(int)];
+	int	flags;	char flags_[PAD_(int)];
+	const struct itimerspec *	value;	char value_[PAD_(const struct itimerspec *)];
+	struct itimerspec *	ovalue;	char ovalue_[PAD_(struct itimerspec *)];
+};
+struct	timer_gettime_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	timerid;	char timerid_[PAD_(int)];
+	struct itimerspec *	value;	char value_[PAD_(struct itimerspec *)];
+};
+struct	timer_getoverrun_args {
+#ifdef _KERNEL
+	struct sysmsg sysmsg;
+#endif
+	int	timerid;	char timerid_[PAD_(int)];
+};
 struct	nanosleep_args {
 #ifdef _KERNEL
 	struct sysmsg sysmsg;
@@ -2693,6 +2729,11 @@ int	sys_shmget (struct shmget_args *);
 int	sys_clock_gettime (struct clock_gettime_args *);
 int	sys_clock_settime (struct clock_settime_args *);
 int	sys_clock_getres (struct clock_getres_args *);
+int	sys_timer_create (struct timer_create_args *);
+int	sys_timer_delete (struct timer_delete_args *);
+int	sys_timer_settime (struct timer_settime_args *);
+int	sys_timer_gettime (struct timer_gettime_args *);
+int	sys_timer_getoverrun (struct timer_getoverrun_args *);
 int	sys_nanosleep (struct nanosleep_args *);
 int	sys_minherit (struct minherit_args *);
 int	sys_rfork (struct rfork_args *);

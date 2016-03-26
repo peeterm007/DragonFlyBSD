@@ -202,11 +202,11 @@
 #define	SYS_clock_gettime	232
 #define	SYS_clock_settime	233
 #define	SYS_clock_getres	234
-#define SYS_ktimer_create	235
-#define SYS_ktimer_delete	236
-#define SYS_ktimer_settime	237
-#define SYS_ktimer_gettime	238
-#define SYS_ktimer_getoverrun	239
+#define	SYS_timer_create	235
+#define	SYS_timer_delete	236
+#define	SYS_timer_settime	237
+#define	SYS_timer_gettime	238
+#define	SYS_timer_getoverrun	239
 #define	SYS_nanosleep	240
 #define	SYS_minherit	250
 #define	SYS_rfork	251
