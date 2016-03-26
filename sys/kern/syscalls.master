@@ -358,11 +358,15 @@
 			    const struct timespec *tp); }
 234	STD	{ int clock_getres(clockid_t clock_id, \
 			    struct timespec *tp); }
-235	UNIMPL	timer_create
-236	UNIMPL	timer_delete
-237	UNIMPL	timer_settime
-238	UNIMPL	timer_gettime
-239	UNIMPL	timer_getoverrun
+235	STD	{ int timer_create(clockid_t clock_id, \
+			    struct sigevent *evp, int *timerid); }
+236	STD	{ int timer_delete(int timerid); }
+237	STD	{ int timer_settime(int timerid, int flags, \
+			    constr struct itimerspec *value, \
+			    struct itimerspec *ovalue); }
+238	STD	{ int timer_gettime(int timerid,
+			    struct itimerspec *value); }
+239	STD	{ int timer_getoverrun(int timerid); }
 240	STD	{ int nanosleep(const struct timespec *rqtp, \
 			    struct timespec *rmtp); }
 241	UNIMPL	nosys
