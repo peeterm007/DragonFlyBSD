@@ -428,6 +428,33 @@ sys_getcpuclockid(struct getcpuclockid_args *uap)
 	return (error);
 }
 
+
+int sys_timer_create(struct timer_create_args *uap)
+{
+	return ENOSYS;
+}
+
+int sys_timer_delete(struct timer_delete_args *uap)
+{
+	return ENOSYS;
+}
+
+int sys_timer_gettime(struct timer_gettime_args *uap)
+{
+	return ENOSYS;
+}
+
+int sys_timer_settime(struct timer_settime_args *uap)
+{
+	return ENOSYS;
+}
+
+int sys_timer_getoverrun(struct timer_getoverrun_args *uap)
+{
+	return ENOSYS;
+}
+
+
 /*
  * nanosleep1()
  *
