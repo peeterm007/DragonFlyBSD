@@ -40,4 +40,19 @@
 
 #include <sys/time.h>
 
+#define TIMER_MAX 32
+
+struct itimer {
+        struct sigevent it_sigev;
+        struct itimerspec it_time;
+        int it_flags;
+        int it_overrun;
+        int it_overrun_last;
+        int it_clockid;
+        int it_timerid;
+        struct callout it_callout;
+};
+
+LIST_HEAD(itimerlist, itimer);
+
 #endif

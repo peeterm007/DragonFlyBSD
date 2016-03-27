@@ -96,6 +96,7 @@ SYSCTL_INT(_kern, OID_AUTO, gettimeofday_quick, CTLFLAG_RW,
 	   &gettimeofday_quick, 0, "");
 
 static struct lock masterclock_lock = LOCK_INITIALIZER("mstrclk", 0, 0);
+SYSINIT(posix_timer, SI_PUB_P1003_1B, SI_ORDER_FIRST+4, posix_timer_start, NULL);
 
 static int
 settime(struct timeval *tv)
@@ -428,35 +429,232 @@ sys_getcpuclockid(struct getcpuclockid_args *uap)
 	return (error);
 }
 
-
-int sys_timer_create(struct timer_create_args *uap)
+static void
+posix_timer_start(void)
 {
+	p31b_setcfg(CTL_P1003_1B_TIMERS, 200112L);
+	p31b_setcfg(CTL_P1003_1B_DELAYTIMER_MAX, INT_MAX);
+	p31b_setcfg(CTL_P1003_1B_TIMER_MAX, TIMER_MAX);
+}
+
+int
+sys_timer_create(struct timer_create_args *uap)
+{
+	struct proc *p = curproc;
+	struct itimer *it;
+	struct sigevent *evp, ev;
+	int id;
+	int error;
+
 	kprintf("timer create\n");
-	return ENOSYS;
+
+	if (uap->clock_id < 0 || uap->clock_id >= MAX_CLOCKS)
+		return EINVAL;
+
+	if (uap->evp != NULL) {
+		error = copyin(uap->evp, &ev, sizeof(ev));
+		if (error != 0)
+			return error;
+	
+		evp = &ev;
+
+		if (evp->sigev_notify != SIGEV_NONE &&
+		    evp->sigev_notify != SIGEV_SIGNAL) {
+		    /* TODO SIGEV_THREAD_ID */
+			return EINVAL;
+		}
+		if ((evp->sigev_notify == SIGEV_SIGNAL) &&
+		    !_SIG_VALID(evp->sigev_signo))
+			return EINVAL;
+	} else 
+		evp = NULL;
+
+	it = kmalloc(sizeof(struct itimer), M_PROC, M_WAITOK | M_ZERO);
+	it->it_flags = 0;
+	it->it_overrun = 0;
+	it->it_overrun_last = 0;
+	it->it_timerid = -1;
+	callout_init(&it->callout);
+
+	lwkt_gettoken(&p->p_token)
+	for (id = 3; id < TIMER_MAX; id++) 
+		if (p->p_itimers[id] != NULL)
+			break;
+	if (id == TIMER_MAX) {
+		lwkt_reltoken(&p->p_token);
+		kfree(it, M_PROC);
+		return EAGAIN;
+	}
+	p->p_itimers[id] = it;
+	it->it_timerid = id;
+
+	if (evp != NULL) {
+		it->it_sigev = *evp;
+	} else {
+		it->it_sigev.sigev_notify = SIGEV_SIGNAL;
+		switch(clock_id) {
+		default:
+		case CLOCK_REALTIME:
+			it->it_sigev.sigev_signo = SIGALRM;
+			break;
+		case CLOCK_VIRTUAL:
+			it->it_sigev.sigev_signo = SIGVTALRM;
+			break;
+		case CLOCK_PROF:
+			it->it_sigev.sigev_signo = SIGPROF;
+			break;
+		}
+		it->it_sigev.sigev_value.sival_int = id;
+	}	
+	// signaling stuff
+	lwkt_reltoken(&p->p_token);
+
+	error = copyout(&id, uap->timerid, sizeof(int));
+	if (error != 0)
+		return -1; // XXX timer needs to be deleted
+			
+	return 0;
 }
 
-int sys_timer_delete(struct timer_delete_args *uap)
+int
+sys_timer_delete(struct timer_delete_args *uap)
 {
+	struct proc *p = curproc;
+	int id;
+
 	kprintf("timer delete\n");
-	return ENOSYS;
+	id = uap->timerid;
+	
+	lwkt_gettoken(&p->p_token);
+	if ((id < 0) || (id >= TIMER_MAX) ||
+	    (p->p_itimers[id] == NULL)) {
+		lwkt_reltoken(&p->p_token);
+		return EINVAL;
+	} 
+	//callout_drain()
+
+	lwkt_reltoken(&p->p_token);
+	return 0;
 }
 
-int sys_timer_gettime(struct timer_gettime_args *uap)
+int
+sys_timer_gettime(struct timer_gettime_args *uap)
 {
+	struct proc *p = curproc;
+	struct timeval ctv;
+	struct itimerval aitv;
+	struct itimerspec aits;
+	int id;
+
 	kprintf("timer gettime\n");
-	return ENOSYS;
+
+	id = uap->timerid;
+
+	lwkt_gettoken(&p->p_token);
+	if ((id < 0) || (id >= TIMER_MAX) ||
+	    (p->p_itimers[id] == NULL)) {
+		lwkt_reltoken(&p->p_token);
+		return EINVAL;
+	} 
+
+	aits = p->p_itimers[id]->it_time;
+	lwkt_reltoken(&p->p_token);
+	// diff?
+	return (copyout(&aits, uap->its, sizeof (struct itimerspec)));
 }
 
-int sys_timer_settime(struct timer_settime_args *uap)
+int
+sys_timer_settime(struct timer_settime_args *uap)
 {
+	struct proc *p = curproc;
+	struct timespec cts, ts;
+	struct timeval tv;
+	struct itimerspec val, oval;
+	struct itimer *it;
+	int id;
+	int error;
+
 	kprintf("timer settime\n");
-	return ENOSYS;
+
+	error = copyin(uap->value, &val, sizeof(struct itimerspec));
+	if (error != 0)
+		return error;
+
+	lwkt_gettoken(&p->p_token);
+	if ((id < 0) || (id >= TIMER_MAX) ||
+	    (p->p_itimers[id] == NULL)) {
+		lwkt_reltoken(&p->p_token);
+		return EINVAL;
+	} 
+	it = p->p_itimers[id];
+	
+	if (itimespecfix(&val.it_value)) {
+		lwkt_reltoken(&p->p_token);
+		return EINVAL;
+	}
+	if (timespecisset(&val.it_interval)) {
+		if (itimespecfix(&val.it_interval)) {
+			lwkt_reltoken(&p->p_token);
+			return EINVAL;
+		}
+	} else {
+		timespecclear(&val.it_interval);
+	}	
+	
+	oval = it->it_time;
+	it->it_time = val;
+	if (timespecisset(&val.it_value)) {
+		kern_clock_gettime(it->it_clockid, &cts);
+		ts = val.it_value;
+		if ((flags & TIMER_ABSTIME) == 0) {
+			timespecadd(&it->it_time.it_value, &cts);
+		} else {
+			timespecsub(&ts, &cts);
+		}
+		TIMESPEC_TO_TIMEVAL(&tv, &ts);
+		callout_reset(&it->it_callout, tvtohz(&tv),
+			      itimer_expire, it);
+	} else {
+		callout_stop(&it->it_callout);	
+	}
+	
+	lwkt_reltoken(&p->p_token);
+
+	if (uap->ovalue != NULL)
+		error = copyout(&oval, uap->ovalue, sizeof(struct itimerspec));
+
+	return error;
 }
 
-int sys_timer_getoverrun(struct timer_getoverrun_args *uap)
+int
+sys_timer_getoverrun(struct timer_getoverrun_args *uap)
 {
+	struct proc *p = curproc;
+	int id;
+	int result;
+
 	kprintf("timer getoverrun\n");
-	return ENOSYS;
+	id = uap->timerid;
+	
+	lwkt_gettoken(&->p_token);
+	if ((id < 0) || (id >= TIMER_MAX) ||
+	    (p->p_itimers[id] == NULL)) {
+		lwkt_reltoken(&p->p_token);
+		return EINVAL;
+	}	
+	result = p_itimers[id]->it_overrun_last;
+	lwkt_reltoken(&p->p_token);
+
+	return result;
+}
+
+void
+itimer_expire(void *arg)
+{
+	struct itimer *it;
+	it = (struct itimer *)arg;
+
+	kprintf("itimer expires\n");
 }
 
 

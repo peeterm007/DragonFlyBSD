@@ -269,7 +269,8 @@ struct	proc {
 	unsigned int	p_swtime;	/* Time swapped in or out */
 
 	struct itimerval p_realtimer;	/* Alarm timer. */
-	struct itimerval p_timer[3];	/* Virtual-time timers. */
+	struct itimer	 *p_timers[TIMER_MAX];	/* POSIX interval timers */
+	struct itimerval p_timer[3];	/* Virtual-time timers. Obsoleted by p_timer */
 
 	int		p_traceflag;	/* Kernel trace points. */
 	struct ktrace_node *p_tracenode; /* Trace to vnode. */
