@@ -63,6 +63,7 @@
 #include <sys/globaldata.h>
 #endif
 #include <sys/systimer.h>
+#include <sys/timers.h>
 #include <sys/iosched.h>
 #include <sys/usched.h>
 #include <machine/proc.h>		/* Machine-dependent proc substruct. */

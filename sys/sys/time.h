@@ -179,6 +179,7 @@ struct clockinfo {
 #define CLOCK_SECOND		13	/* from freebsd */
 #define CLOCK_THREAD_CPUTIME_ID		14
 #define CLOCK_PROCESS_CPUTIME_ID	15
+#define MAX_CLOCKS		CLOCK_PROCESS_CPUTIME_ID
 
 #define TIMER_RELTIME	0x0	/* relative timer */
 #ifndef TIMER_ABSTIME

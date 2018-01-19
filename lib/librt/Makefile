@@ -4,7 +4,7 @@ WARNS?=2
 LDADD+=-pthread
 DPADD+=${LIBPTHREAD}
 
-SRCS+= mq.c aio.c
+SRCS+= mq.c aio.c timer.c
 
 MAN+=	mq_close.2 mq_getattr.2 mq_notify.2 mq_open.2 mq_receive.2 \
 	mq_send.2 mq_setattr.2 mq_unlink.2

@@ -39,6 +39,7 @@
 #define _SYS_TIMERS_H_
 
 #include <sys/time.h>
+#include <sys/timespec.h>
 
 #define TIMER_MAX 32
 
@@ -50,6 +51,7 @@ struct itimer {
         int it_overrun_last;
         int it_clockid;
         int it_timerid;
+	struct proc *it_proc;
         struct callout it_callout;
 };
 
