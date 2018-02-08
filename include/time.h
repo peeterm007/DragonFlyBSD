@@ -96,6 +96,13 @@ typedef	__pid_t		pid_t;
 #endif
 #endif
 
+#if __BSD_VISIBLE
+#ifndef _LWPID_T_DECLARED
+#define	_LWPID_T_DECLARED
+typedef	__pid_t		lwpid_t;	/* light weight process id */
+#endif
+#endif
+
 /* These macros are also in sys/time.h. */
 #if !defined(CLOCK_REALTIME) && __POSIX_VISIBLE >= 199309
 #define	CLOCK_REALTIME		0
@@ -199,6 +206,7 @@ char *strptime(const char * __restrict, const char * __restrict,
 #endif
 
 #if __BSD_VISIBLE
+int getcpuclockid(pid_t, lwpid_t, clockid_t *);
 void tzsetwall(void);
 time_t timelocal(struct tm * const);
 time_t timegm(struct tm * const);

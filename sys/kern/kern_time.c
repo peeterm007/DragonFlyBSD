@@ -52,6 +52,13 @@
 #include <sys/spinlock2.h>
 #include <sys/thread2.h>
 
+#define TIMER_DEBUG 1
+#ifdef TIMER_DEBUG
+#define	debugf(fmt, args...)	kprintf("DEBUG timer: "fmt"\n", ##args)
+#else
+#define	debugf(fmt, args...)
+#endif
+
 extern struct spinlock ntp_spin;
 
 #include <sys/timespec.h>
@@ -103,6 +110,10 @@ SYSCTL_INT(_kern, OID_AUTO, gettimeofday_quick, CTLFLAG_RW,
 static void posix_timer_start(void);
 static void posix_timer_expire(void *);
 
+void itimer_fire(struct itimer *it);
+
+static void print_itimerspec(struct itimerspec *);
+
 static struct lock masterclock_lock = LOCK_INITIALIZER("mstrclk", 0, 0);
 SYSINIT(posix_timer, SI_SUB_P1003_1B, SI_ORDER_FIRST+4, posix_timer_start, NULL);
 
@@ -123,7 +134,7 @@ settime(struct timeval *tv)
 	timevalsub(&delta, &tv1);
 
 	/*
-	 * If the system is secure, we do not allow the time to be 
+	 * If the system is secure, we do not allow the time to be
 	 * set to a value earlier than 1 second less than the highest
 	 * time we have yet seen. The worst a miscreant can do in
 	 * this circumstance is "freeze" time. He couldn't go
@@ -445,6 +456,14 @@ posix_timer_start(void)
 	p31b_setcfg(CTL_P1003_1B_TIMER_MAX, TIMER_MAX);
 }
 
+static void
+print_itimerspec(struct itimerspec *ts)
+{
+	kprintf("value = %ld sec %ld nsec, interval = %ld sec %ld nsec\n",
+		ts->it_value.tv_sec, ts->it_value.tv_nsec,
+		ts->it_interval.tv_sec, ts->it_interval.tv_nsec);
+}
+
 int
 sys_timer_create(struct timer_create_args *uap)
 {
@@ -454,33 +473,34 @@ sys_timer_create(struct timer_create_args *uap)
 	int id;
 	int error;
 
-	kprintf("timer create\n");
+	debugf("sys_timer_create(): enter");
 
 	if (uap->clock_id < 0 || uap->clock_id >= MAX_CLOCKS)
 		return EINVAL;
 
-	kprintf("timer create 1\n");
+	debugf("sys_timer_create(): 1");
 	if (uap->evp != NULL) {
 		error = copyin(uap->evp, &ev, sizeof(ev));
 		if (error != 0) {
-			kprintf("timer create 1\n");
+			debugf("sys_timer_create(): 1.1");
 			return error;
-		}	
+		}
 		evp = &ev;
 
 		if (evp->sigev_notify != SIGEV_NONE &&
 		    evp->sigev_notify != SIGEV_SIGNAL) {
 		    /* TODO SIGEV_THREAD_ID */
-			kprintf("timer create 2\n");
+			debugf("timer create 2");
 			return EINVAL;
 		}
 		if ((evp->sigev_notify == SIGEV_SIGNAL) &&
 		    !_SIG_VALID(evp->sigev_signo)) {
-			kprintf("timer create 3\n");
+			debugf("timer create 3");
 			return EINVAL;
 		}
-	} else 
+	} else {
 		evp = NULL;
+	}
 
 	it = kmalloc(sizeof(struct itimer), M_PROC, M_WAITOK | M_ZERO);
 	it->it_flags = 0;
@@ -491,11 +511,12 @@ sys_timer_create(struct timer_create_args *uap)
 	callout_init(&it->it_callout);
 
 	lwkt_gettoken(&p->p_token);
-	for (id = 3; id < TIMER_MAX; id++) 
+	for (id = 3; id < TIMER_MAX; id++) {
 		if (p->p_timers[id] == NULL)
 			break;
+	}
 	if (id == TIMER_MAX) {
-		kprintf("timer create 4\n");
+		debugf("timer create 4");
 		lwkt_reltoken(&p->p_token);
 		kfree(it, M_PROC);
 		return EAGAIN;
@@ -520,15 +541,26 @@ sys_timer_create(struct timer_create_args *uap)
 			break;
 		}
 		it->it_sigev.sigev_value.sival_int = id;
-	}	
-	// signaling stuff
+	}
+	/*
+	 * signalling
+	 *
+	 * XXX TODO: - SIGEV_THREAD_ID
+	 * 	     - it->it_ksi.si_code = SI_TIMER;
+	 * 	     - it->it_ksi.ksi_timerid = id;
+	 */
+	if (it->it_sigev.sigev_notify == SIGEV_SIGNAL) {
+		it->it_ksi.si_signo = it->it_sigev.sigev_signo;
+		it->it_ksi.si_value = it->it_sigev.sigev_value;
+		it->it_ksi.si_code = SI_TIMER; //not implemented in kern_signal
+	}
 	lwkt_reltoken(&p->p_token);
 
-	kprintf("timer id: %d\n", id);
+	debugf("timer id: %d", id);
 	error = copyout(&id, uap->timerid, sizeof(int));
 	if (error != 0)
 		return -1; // XXX timer needs to be deleted
-			
+
 	return 0;
 }
 
@@ -538,15 +570,15 @@ sys_timer_delete(struct timer_delete_args *uap)
 	struct proc *p = curproc;
 	int id;
 
-	kprintf("timer delete\n");
+	debugf("timer delete");
 	id = uap->timerid;
-	
+
 	lwkt_gettoken(&p->p_token);
 	if ((id < 0) || (id >= TIMER_MAX) ||
 	    (p->p_timers[id] == NULL)) {
 		lwkt_reltoken(&p->p_token);
 		return EINVAL;
-	} 
+	}
 	callout_stop(&p->p_timers[id]->it_callout);
 	//callout_drain()
 
@@ -561,7 +593,7 @@ sys_timer_gettime(struct timer_gettime_args *uap)
 	struct itimerspec aits;
 	int id;
 
-	kprintf("timer gettime\n");
+	debugf("timer gettime");
 
 	id = uap->timerid;
 
@@ -570,11 +602,15 @@ sys_timer_gettime(struct timer_gettime_args *uap)
 	    (p->p_timers[id] == NULL)) {
 		lwkt_reltoken(&p->p_token);
 		return EINVAL;
-	} 
+	}
 
 	aits = p->p_timers[id]->it_time;
 	lwkt_reltoken(&p->p_token);
 	// diff?
+
+	debugf("timer_gettime(): value: %ld sec %ld nsec, interval: %ld sec %ld nsec\n",
+		aits.it_value.tv_sec, aits.it_value.tv_nsec,
+		aits.it_interval.tv_sec, aits.it_interval.tv_nsec);
 	return (copyout(&aits, uap->value, sizeof (struct itimerspec)));
 }
 
@@ -589,22 +625,24 @@ sys_timer_settime(struct timer_settime_args *uap)
 	int id;
 	int error;
 
-	kprintf("timer settime\n");
+	debugf("timer_settime(): enter");
 
 	error = copyin(uap->value, &val, sizeof(struct itimerspec));
 	if (error != 0)
 		return error;
 
-	kprintf("settime of id %d\n", uap->timerid);
+	debugf("timer_settime(): itimerspec: ");
+	print_itimerspec(&val);
+	debugf("settime of id %d", uap->timerid);
 	id = uap->timerid;
 	lwkt_gettoken(&p->p_token);
 	if ((id < 0) || (id >= TIMER_MAX) ||
 	    (p->p_timers[id] == NULL)) {
 		lwkt_reltoken(&p->p_token);
 		return EINVAL;
-	} 
+	}
 	it = p->p_timers[id];
-	
+
 	if (itimespecfix(&val.it_value)) {
 		lwkt_reltoken(&p->p_token);
 		return EINVAL;
@@ -616,8 +654,8 @@ sys_timer_settime(struct timer_settime_args *uap)
 		}
 	} else {
 		timespecclear(&val.it_interval);
-	}	
-	
+	}
+
 	oval = it->it_time;
 	it->it_time = val;
 	if (timespecisset(&val.it_value)) {
@@ -629,20 +667,23 @@ sys_timer_settime(struct timer_settime_args *uap)
 			timespecsub(&ts, &cts);
 		}
 		TIMESPEC_TO_TIMEVAL(&tv, &ts);
-		kprintf("timer?");
+		debugf("timer?");
 		callout_reset(&it->it_callout, tvtohz_low(&tv),
 			      posix_timer_expire, it);
 	} else {
-		kprintf("timer stop?");
-		callout_stop(&it->it_callout);	
+		debugf("timer stop?");
+		callout_stop(&it->it_callout);
 	}
-	
+
 	lwkt_reltoken(&p->p_token);
 
-	kprintf("mayme copyout.");
+	debugf("mayme copyout");
 	if (uap->ovalue != NULL)
 		error = copyout(&oval, uap->ovalue, sizeof(struct itimerspec));
 
+	debugf("timer_settime(): value: %ld sec %ld nsec, interval: %ld sec %ld nsec\n",
+		&it->it_time.it_value.tv_sec, &it->it_time.it_value.tv_nsec,
+		&it->it_time.it_interval.tv_sec, &it->it_time.it_interval.tv_nsec);
 	return error;
 }
 
@@ -653,65 +694,108 @@ sys_timer_getoverrun(struct timer_getoverrun_args *uap)
 	int id;
 	int result;
 
-	kprintf("timer getoverrun\n");
+	debugf("timer_getoverrun(): enter");
 	id = uap->timerid;
-	
+
 	lwkt_gettoken(&p->p_token);
 	if ((id < 0) || (id >= TIMER_MAX) ||
 	    (p->p_timers[id] == NULL)) {
 		lwkt_reltoken(&p->p_token);
 		return EINVAL;
-	}	
+	}
 	result = p->p_timers[id]->it_overrun_last;
 	lwkt_reltoken(&p->p_token);
+
+	debugf("timer_getoverrun(): result it_overrun_last = %d", result);
 
 	return result;
 }
 
-void
+static void
 posix_timer_expire(void *arg)
 {
-  struct timespec cts, ts;
+	struct timespec cts, ts;
 	struct timeval tv;
 	struct proc *p;
 	struct itimer *it;
 	it = (struct itimer *)arg;
 	p = it->it_proc;
-	
-	kprintf("itimer expires\n");
+
+	debugf("posix_timer_expire(): enter");
 	kern_clock_gettime(it->it_clockid, &cts);
 
 	if (timespeccmp(&cts, &it->it_time.it_value, >=)) {
-          if (timespecisset(&it->it_time.it_interval)) {
-                  timespecadd(&it->it_time.it_value,
-                              &it->it_time.it_interval);
-                  while (timespeccmp(&cts, &it->it_time.it_value, >=)) {
-                          if (it->it_overrun < INT_MAX)
-                                  it->it_overrun++;
-                          else { /* ksi? */ }
-                                  
-                          timespecadd(&it->it_time.it_value,
-                                      &it->it_time.it_interval);
-                  }
-          } else {
-                  timespecclear(&it->it_time.it_value);
-          }
-          if (timespecisset(&it->it_time.it_value)) {
-                  ts = it->it_time.it_value;
-                  timespecsub(&ts, &cts);
-                  TIMESPEC_TO_TIMEVAL(&tv, &ts);
-                  callout_reset(&it->it_callout, tvtohz_low(&tv),
-                                posix_timer_expire, it);
-          }
-          // here signal the process
+		if (timespecisset(&it->it_time.it_interval)) {
+			timespecadd(&it->it_time.it_value,
+				    &it->it_time.it_interval);
+			while (timespeccmp(&cts, &it->it_time.it_value, >=)) {
+				if (it->it_overrun < INT_MAX)
+					it->it_overrun++;
+				else
+					it->it_ksi.si_errno = ERANGE;
+				timespecadd(&it->it_time.it_value,
+					    &it->it_time.it_interval);
+			}
+		} else {
+			timespecclear(&it->it_time.it_value);
+		}
+		if (timespecisset(&it->it_time.it_value)) {
+			ts = it->it_time.it_value;
+			timespecsub(&ts, &cts);
+			TIMESPEC_TO_TIMEVAL(&tv, &ts);
+			callout_reset(&it->it_callout, tvtohz_low(&tv),
+				      posix_timer_expire, it);
+		}
+		// here signal the process
+		debugf("posix_timer_expire: itimer_fire: it_overrun = %d",
+		       it->it_overrun);
+		itimer_fire(it);
 	} else if (timespecisset(&it->it_time.it_value)) {
-          ts = it->it_time.it_value;
-          timespecsub(&ts, &cts);
-          TIMESPEC_TO_TIMEVAL(&tv, &ts);
-          callout_reset(&it->it_callout, tvtohz_low(&tv), posix_timer_expire, it);
-	}	
+		debugf("posix_timer_expire: NO itimer_fire");
+		ts = it->it_time.it_value;
+		timespecsub(&ts, &cts);
+		TIMESPEC_TO_TIMEVAL(&tv, &ts);
+		callout_reset(&it->it_callout, tvtohz_low(&tv),
+			      posix_timer_expire, it);
+	}
 }
 
+/* XXX */
+void
+itimer_fire(struct itimer *it)
+{
+	struct proc *p = it->it_proc;
+
+	if (it->it_sigev.sigev_notify == SIGEV_SIGNAL) {
+		debugf("itimer_fire(): if");
+		PHOLD(p);
+		lwkt_gettoken(&p->p_token);
+		//ITIMER_LOCK(it);
+		/*
+		 * This is wrong. It will always ++ overrun
+		 * irrespective of whether the signal was
+		 * sent or not. In FreeBSD, it checks if signal
+		 * has been delivered, ie if sigqueue exists.
+		 */
+		if (&it->it_ksi) {
+			it->it_overrun++;
+			//it->it_ksi.ksi_overrun = it->it_overrun;
+			it->it_overrun_last = it->it_overrun;
+			debugf("itimer_fire: if-if: overrun = %d, overrun_last = %d",
+			       it->it_overrun, it->it_overrun_last);
+		} else {
+			debugf("itimer_fire: else-if");
+			//it->it_ksi.ksi_overrun = it->it_overrun;
+			it->it_overrun_last = it->it_overrun;
+			it->it_overrun = 0;
+			//psignal_info(p, &it->it_ksi);
+			ksignal(p, it->it_ksi.si_signo);
+		}
+		lwkt_reltoken(&p->p_token);
+		PRELE(p);
+		//ITIMER_UNLOCK(it);
+	}
+}
 
 /*
  * nanosleep1()
@@ -1057,7 +1141,7 @@ sysctl_adjfreq(SYSCTL_HANDLER_ARGS)
 		error = SYSCTL_IN(req, &freqdelta, sizeof(freqdelta));
 		if (error)
 			return (error);
-		
+
 		freqdelta /= hz;
 		kern_adjfreq(freqdelta);
 	}
@@ -1184,7 +1268,7 @@ sys_setitimer(struct setitimer_args *uap)
 	if (uap->which == ITIMER_REAL) {
 		if (timevalisset(&p->p_realtimer.it_value))
 			callout_stop_sync(&p->p_ithandle);
-		if (timevalisset(&aitv.it_value)) 
+		if (timevalisset(&aitv.it_value))
 			callout_reset(&p->p_ithandle,
 			    tvtohz_high(&aitv.it_value), realitexpire, p);
 		getmicrouptime(&ctv);
@@ -1393,7 +1477,7 @@ ratecheck(struct timeval *lasttime, const struct timeval *mininterval)
  *
  * Note that we maintain the struct timeval for compatibility
  * with other bsd systems.  We reuse the storage and just monitor
- * clock ticks for minimal overhead.  
+ * clock ticks for minimal overhead.
  */
 int
 ppsratecheck(struct timeval *lasttime, int *curpps, int maxpps)

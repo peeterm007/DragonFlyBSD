@@ -32,7 +32,7 @@
  * $FreeBSD: src/sys/sys/timers.h,v 1.4 1999/08/28 00:52:05 peter Exp $
  * $DragonFly: src/sys/sys/timers.h,v 1.2 2003/06/17 04:28:59 dillon Exp $
  *
- * Description : Basic timers header.
+ * Description: Basic timers header.
  */
 
 #ifndef _SYS_TIMERS_H_
@@ -44,15 +44,16 @@
 #define TIMER_MAX 32
 
 struct itimer {
-        struct sigevent it_sigev;
-        struct itimerspec it_time;
-        int it_flags;
-        int it_overrun;
-        int it_overrun_last;
-        int it_clockid;
-        int it_timerid;
-	struct proc *it_proc;
-        struct callout it_callout;
+	struct sigevent		it_sigev;
+	struct itimerspec	it_time;
+	int 		it_flags;
+	int		it_overrun;	 /* Overruns currently accumulating */
+	int		it_overrun_last; /* Overruns associated w/ a delivery */
+	int		it_clockid;
+	int		it_timerid;
+	struct proc 	*it_proc;
+	struct callout	it_callout;
+	siginfo_t	it_ksi;
 };
 
 LIST_HEAD(itimerlist, itimer);
