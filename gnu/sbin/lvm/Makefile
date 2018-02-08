@@ -20,13 +20,12 @@ SRCS=		dumpconfig.c formats.c lvchange.c lvconvert.c lvcreate.c \
 		vgmknodes.c vgreduce.c vgremove.c vgrename.c vgscan.c \
 		vgsplit.c lvm.c
 
-WARNS?=		1
-
 CFLAGS+=	-I${LVM2_DISTDIR}/lib -I${LVM2_DISTDIR}/include \
 		-I. -I${LVM2_DISTDIR}/tools \
 		-I${LIBDM_DISTDIR}
 
 CFLAGS+=	-DLVM_SHARED_PATH=\"$(BINDIR)/lvm\"
+CFLAGS+=	-DREADLINE_SUPPORT -I${_SHLIBDIRPREFIX}/usr/include/priv
 
 # Some parts of the code can't be protected because if its
 # alloca() usage.

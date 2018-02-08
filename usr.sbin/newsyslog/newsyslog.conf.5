@@ -5,7 +5,7 @@
 .\" This file contains changes from the Open Software Foundation.
 .\"
 .\"     from: @(#)newsyslog.8
-.\" $FreeBSD: src/usr.sbin/newsyslog/newsyslog.conf.5,v 1.12 2011/01/31 11:30:26 mm Exp $
+.\" $FreeBSD: head/usr.sbin/newsyslog/newsyslog.conf.5 328035 2018-01-16 00:47:53Z jhb $
 .\"
 .\" Copyright 1988, 1989 by the Massachusetts Institute of Technology
 .\"
@@ -21,7 +21,7 @@
 .\" the suitability of this software for any purpose.  It is
 .\" provided "as is" without express or implied warranty.
 .\"
-.Dd January 31, 2011
+.Dd January 29, 2018
 .Dt NEWSYSLOG.CONF 5
 .Os
 .Sh NAME
@@ -130,7 +130,7 @@ Additionally, the format may also be constructed with a
 sign along with a rotation time specification of once
 a day, once a week, or once a month.
 .Pp
-If a time is specified, the log file will only be trimmed if
+Time based trimming happens only if
 .Xr newsyslog 8
 is run within one hour of the specified time.
 If an interval is specified, the log file will be trimmed if that many
@@ -155,8 +155,17 @@ The particular format of the time in restricted
 .Tn ISO 8601
 is:
 .Sm off
-.Oo Oo Oo Oo Oo Va cc Oc Va yy Oc Va mm Oc Va dd Oc
-.Oo Li T Oo Va hh Oo Va mm Oo Va ss Oc Oc Oc Oc Oc .
+.Oo Oo Oo Oo Oo
+.Va cc Oc
+.Va yy Oc
+.Va mm Oc
+.Va dd Oc
+.Oo
+.Li T Oo
+.Va hh Oo
+.Va mm Oo
+.Va ss
+.Oc Oc Oc Oc Oc .
 .Sm on
 Optional date fields default to the appropriate component of the
 current date; optional time fields default to midnight; hence if today
@@ -233,7 +242,7 @@ rotate at the first day of every month at midnight
 (i.e., the start of the day; same as
 .Li @01T00 )
 .It Li $M5D6
-rotate on every 5th day of month at 6:00
+rotate on every fifth day of month at 6:00
 (same as
 .Li @05T06 )
 .El
@@ -288,21 +297,41 @@ indicates that
 should attempt to save disk space by compressing the rotated
 log file using
 .Xr bzip2 1 .
+.It Cm N
+indicates that there is no process which needs to be signaled
+when this log file is rotated.
+.It Cm p
+indicates that the zero-th rotated file should not be compressed.
+.It Cm R
+if this flag is set the
+.Xr newsyslog 8
+will run shell command defined in
+.Ar path_to_pid_cmd_file
+after rotation instead of trying to send signal to a process id
+stored in the file.
+.It Cm T
+if this flag is set the informational rotation message written to
+the log file will be in the format specified by RFC5424.
+Normally, the rotation message is written in the traditional (RFC3164)
+syslog format.
+.It Cm U
+indicates that the file specified by
+.Ar path_to_pid_cmd_file
+will contain the ID for a process group instead of a process.
+This option also requires that the first line in that file
+be a negative value to distinguish it from a process ID.
 .It Cm X
 indicates that
 .Xr newsyslog 8
 should attempt to save disk space by compressing the rotated
 log file using
 .Xr xz 1 .
-.It Cm N
-indicates that there is no process which needs to be signaled
-when this log file is rotated.
-.It Cm U
-indicates that the file specified by
-.Ar path_to_pid_file
-will contain the ID for a process group instead of a process.
-This option also requires that the first line in that file
-be a negative value to distinguish it from a process ID.
+.\".It Cm Y
+.\"indicates that
+.\".Xr newsyslog 8
+.\"should attempt to save disk space by compressing the rotated
+.\"log file using
+.\".Xr zstd 1 .
 .It Cm Z
 indicates that
 .Xr newsyslog 8
@@ -315,13 +344,13 @@ can be used as a placeholder to create a
 .Ar flags
 field when you need to specify any of the following fields.
 .El
-.It Ar path_to_pid_file
+.It Ar path_to_pid_cmd_file
 This optional field specifies the file name containing a daemon's
 process ID or to find a group process ID if the
 .Cm U
 flag was specified.
 If this field is present, a
-.Ar signal_number
+.Ar signal
 is sent to the process ID contained in this file.
 If this field is not present and the
 .Cm N
@@ -336,15 +365,35 @@ switch.
 This field must start with
 .Ql /
 in order to be recognized properly.
-.It Ar signal_number
-This optional field specifies the signal number that will be sent
-to the daemon process (or to all processes in a process group, if the
+When used with the
+.Cm R
+flag, the file is treated as a path to a binary to be executed
+by the
+.Xr newsyslog 8
+after rotation instead of sending the signal out.
+.It Ar signal
+This optional field specifies the signal that will be sent to the daemon
+process (or to all processes in a process group, if the
 .Cm U
 flag was specified).
 If this field is not present, then a
 .Dv SIGHUP
 signal will be sent.
+Signal names
+must start with
+.Dq SIG
+and be the signal name, e.g.,
+.Dv SIGUSR1 .
+Alternatively,
+.Ar signal
+can be the signal number, e.g., 30 for
+.Dv SIGUSR1 .
 .El
+.Sh EXAMPLES
+The following is an example of the
+.Dq Aq Li include
+entry:
+.Dl "<include> /etc/newsyslog-local.conf"
 .Sh SEE ALSO
 .Xr bzip2 1 ,
 .Xr gzip 1 ,
@@ -353,6 +402,16 @@ signal will be sent.
 .Xr chown 8 ,
 .Xr newsyslog 8 ,
 .Xr syslogd 8
+.Rs
+.%A C. Lonvick
+.%T The BSD syslog Protocol
+.%O RFC3164
+.Re
+.Rs
+.%A R. Gerhards
+.%T The Syslog Protocol
+.%O RFC5424
+.Re
 .Sh HISTORY
 This manual page first appeared in
 .Fx 4.10 .

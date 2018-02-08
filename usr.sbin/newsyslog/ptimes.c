@@ -39,8 +39,7 @@
  * it works fine for newsyslog but might not work for other uses.
  * ------+---------+---------+---------+---------+---------+---------+---------*
  *
- * $FreeBSD: src/usr.sbin/newsyslog/ptimes.c,v 1.5 2004/06/07 21:53:27 gad Exp $
- * $DragonFly: src/usr.sbin/newsyslog/ptimes.c,v 1.1 2007/05/12 08:52:00 swildner Exp $
+ * $FreeBSD: head/usr.sbin/newsyslog/ptimes.c 318960 2017-05-26 16:36:30Z dab $
  */
 
 #include <ctype.h>
@@ -147,18 +146,22 @@ parse8601(struct ptime_data *ptime, const char *s)
 	case 8:
 		tm.tm_year = ((l / 1000000) - 19) * 100;
 		l = l % 1000000;
+		/* FALLTHROUGH */
 	case 6:
 		ptime->tmspec |= TSPEC_YEAR;
 		tm.tm_year -= tm.tm_year % 100;
 		tm.tm_year += l / 10000;
 		l = l % 10000;
+		/* FALLTHROUGH */
 	case 4:
 		ptime->tmspec |= TSPEC_MONTHOFYEAR;
 		tm.tm_mon = (l / 100) - 1;
 		l = l % 100;
+		/* FALLTHROUGH */
 	case 2:
 		ptime->tmspec |= TSPEC_DAYOFMONTH;
 		tm.tm_mday = l;
+		/* FALLTHROUGH */
 	case 0:
 		break;
 	default:
@@ -180,9 +183,11 @@ parse8601(struct ptime_data *ptime, const char *s)
 		case 6:
 			tm.tm_sec = l % 100;
 			l /= 100;
+			/* FALLTHROUGH */
 		case 4:
 			tm.tm_min = l % 100;
 			l /= 100;
+			/* FALLTHROUGH */
 		case 2:
 			ptime->tmspec |= TSPEC_HOUROFDAY;
 			tm.tm_hour = l;
@@ -342,7 +347,7 @@ ptime_init(const struct ptime_data *optsrc)
 int
 ptime_adjust4dst(struct ptime_data *ptime, const struct ptime_data *dstsrc)
 {
-	struct ptime_data adjtim;
+	struct ptime_data adjtime;
 
 	if (ptime == NULL)
 		return (-1);
@@ -351,22 +356,22 @@ ptime_adjust4dst(struct ptime_data *ptime, const struct ptime_data *dstsrc)
 	 * Changes are not made to the given time until after all
 	 * of the calculations have been successful.
 	 */
-	adjtim = *ptime;
+	adjtime = *ptime;
 
 	/* Check to see if this adjustment was already made */
-	if ((adjtim.did_adj4dst != TNYET_ADJ4DST) &&
-	    (adjtim.did_adj4dst == dstsrc->tm.tm_isdst))
+	if ((adjtime.did_adj4dst != TNYET_ADJ4DST) &&
+	    (adjtime.did_adj4dst == dstsrc->tm.tm_isdst))
 		return (0);		/* yes, so don't make it twice */
 
 	/* See if daylight-saving has changed between the two times. */
-	if (dstsrc->tm.tm_isdst != adjtim.tm.tm_isdst) {
-		if (adjtim.tm.tm_isdst == 1)
-			adjtim.tsecs -= SECS_PER_HOUR;
-		else if (adjtim.tm.tm_isdst == 0)
-			adjtim.tsecs += SECS_PER_HOUR;
-		adjtim.tm = *(localtime(&adjtim.tsecs));
+	if (dstsrc->tm.tm_isdst != adjtime.tm.tm_isdst) {
+		if (adjtime.tm.tm_isdst == 1)
+			adjtime.tsecs -= SECS_PER_HOUR;
+		else if (adjtime.tm.tm_isdst == 0)
+			adjtime.tsecs += SECS_PER_HOUR;
+		adjtime.tm = *(localtime(&adjtime.tsecs));
 		/* Remember that this adjustment has been made */
-		adjtim.did_adj4dst = dstsrc->tm.tm_isdst;
+		adjtime.did_adj4dst = dstsrc->tm.tm_isdst;
 		/*
 		 * XXX - Should probably check to see if changing the
 		 *	hour also changed the value of is_dst.  What
@@ -374,7 +379,7 @@ ptime_adjust4dst(struct ptime_data *ptime, const struct ptime_data *dstsrc)
 		 */
 	}
 
-	*ptime = adjtim;
+	*ptime = adjtime;
 	return (0);
 }
 
@@ -476,6 +481,75 @@ ptimeget_ctime(const struct ptime_data *ptime)
 		return ("Null time in ptimeget_ctime()\n");
 
 	return (ctime(&ptime->tsecs));
+}
+
+/*
+ * Generate a time of day string in an RFC5424 compatible format. Return a
+ * pointer to the buffer with the timestamp string or NULL if an error. If the
+ * time is not supplied, cannot be converted to local time, or the resulting
+ * string would overflow the buffer, the returned string will be the RFC5424
+ * NILVALUE.
+ */
+char *
+ptimeget_ctime_rfc5424(const struct ptime_data *ptime,
+    char *timebuf, size_t bufsize)
+{
+	static const char NILVALUE[] = {"-"};	/* RFC5424 specified NILVALUE */
+	int chars;
+	struct tm tm;
+	int tz_hours;
+	int tz_mins;
+	long tz_offset;
+	char tz_sign;
+
+	if (timebuf == NULL) {
+		return (NULL);
+	}
+
+	if (bufsize < sizeof(NILVALUE)) {
+		return (NULL);
+	}
+
+	/*
+	 * Convert to localtime. RFC5424 mandates the use of the NILVALUE if
+	 * the time cannot be obtained, so use that if there is an error in the
+	 * conversion.
+	 */
+	if (ptime == NULL || localtime_r(&(ptime->tsecs), &tm) == NULL) {
+		strlcpy(timebuf, NILVALUE, bufsize);
+		return (timebuf);
+	}
+
+	/*
+	 * Convert the time to a string in RFC5424 format. The conversion
+	 * cannot be done with strftime() because it cannot produce the correct
+	 * timezone offset format.
+	 */
+	if (tm.tm_gmtoff < 0) {
+		tz_sign = '-';
+		tz_offset = -tm.tm_gmtoff;
+	} else {
+		tz_sign = '+';
+		tz_offset = tm.tm_gmtoff;
+	}
+
+	tz_hours = tz_offset / 3600;
+	tz_mins = (tz_offset % 3600) / 60;
+
+	chars = snprintf(timebuf, bufsize,
+	    "%04d-%02d-%02d"	/* date */
+	    "T%02d:%02d:%02d"	/* time */
+	    "%c%02d:%02d",	/* time zone offset */
+	    tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+	    tm.tm_hour, tm.tm_min, tm.tm_sec,
+	    tz_sign, tz_hours, tz_mins);
+
+	/* If the timestamp is too big for timebuf, return the NILVALUE. */
+	if (chars >= (int)bufsize) {
+		strlcpy(timebuf, NILVALUE, bufsize);
+	}
+
+	return (timebuf);
 }
 
 double

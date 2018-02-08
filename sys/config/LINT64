@@ -855,7 +855,7 @@ options 	VGA_WIDTH90		# support 90 column modes
 pseudo-device	splash
 
 # The syscons console driver (sco color console compatible).
-device		sc0	at isa?
+device		sc0	at nexus?
 options 	MAXCONS=16		# number of virtual consoles
 options 	SC_ALT_MOUSE_IMAGE	# simplified mouse cursor in text mode
 options 	SC_DEBUG_LEVEL=5	# enable debug output
@@ -990,7 +990,28 @@ device		nataraid	# support for ATA software RAID controllers
 #
 # ATA_STATIC_ID:	controller numbering is static (like the old driver)
 #			else the device numbers are dynamically allocated.
+# ATA_NO_*:		leave out support for the specified controller brand
+#
 options 	ATA_STATIC_ID
+#options 	ATA_NO_ACARD
+#options 	ATA_NO_ACERLABS
+#options 	ATA_NO_AHCI
+#options 	ATA_NO_AMD
+#options 	ATA_NO_CYPRESS
+#options 	ATA_NO_CYRIX
+#options 	ATA_NO_HIGHPOINT
+#options 	ATA_NO_INTEL
+#options 	ATA_NO_ITE
+#options 	ATA_NO_JMICRON
+#options 	ATA_NO_MARVELL
+#options 	ATA_NO_NATIONAL
+#options 	ATA_NO_NETCELL
+#options 	ATA_NO_NVIDIA
+#options 	ATA_NO_PROMISE
+#options 	ATA_NO_SERVERWORKS
+#options 	ATA_NO_SILICONIMAGE
+#options 	ATA_NO_SIS
+#options 	ATA_NO_VIA
 
 # For older non-PCI systems, these are the lines to use:
 #
@@ -2261,4 +2282,5 @@ options 	ALTQ_DEBUG	#for debugging
 options		WDOG_DISABLE_ON_PANIC	# Automatically disable watchdogs on panic
 
 # LED
+device		led
 options		ERROR_LED_ON_PANIC	# If an error led is present, light it up on panic

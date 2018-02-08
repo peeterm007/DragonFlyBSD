@@ -262,6 +262,7 @@ MLINKS+=bus_dma.9 busdma.9 \
 	bus_dma.9 bus_dmamap_create.9 \
 	bus_dma.9 bus_dmamap_destroy.9 \
 	bus_dma.9 bus_dmamap_load.9 \
+	bus_dma.9 bus_dmamap_load_ccb.9 \
 	bus_dma.9 bus_dmamap_load_mbuf.9 \
 	bus_dma.9 bus_dmamap_load_mbuf_defrag.9 \
 	bus_dma.9 bus_dmamap_load_mbuf_segment.9 \
@@ -375,9 +376,7 @@ MLINKS+=callout.9 callout_active.9 \
 	callout.9 callout_reset.9 \
 	callout.9 callout_stop.9 \
 	callout.9 callout_stop_async.9 \
-	callout.9 callout_stop_sync.9 \
-	callout.9 timeout.9 \
-	callout.9 untimeout.9
+	callout.9 callout_stop_sync.9
 MLINKS+=condvar.9 cv_broadcast.9 \
 	condvar.9 cv_broadcastpri.9 \
 	condvar.9 cv_destroy.9 \

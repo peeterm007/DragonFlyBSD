@@ -402,8 +402,10 @@ ok:
 		rlen = len;
 
 #if 1
-	if (verbose)
-		printf("[%d]", rlen); fflush(stdout);
+	if (verbose) {
+		printf("[%d]", rlen);
+		fflush(stdout);
+	}
 #endif
 
 again:

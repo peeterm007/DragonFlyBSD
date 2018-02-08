@@ -21,7 +21,6 @@
  * Display/change(+runprogram)/eval resource limits.
  *
  * $FreeBSD: src/usr.bin/limits/limits.c,v 1.7.2.3 2003/05/22 09:26:57 sheldonh Exp $
- * $DragonFly: src/usr.bin/limits/limits.c,v 1.6 2006/03/06 03:10:51 swildner Exp $
  */
 
 #include <err.h>
@@ -466,7 +465,7 @@ main(int argc, char *argv[])
 
     for (rcswhich = 0; rcswhich < RLIM_NLIMITS; rcswhich++) {
 	if (doall || num_limits == 0 || which_limits[rcswhich] != 0) {
-	    if (which_limits[rcswhich] == ANY || which_limits[rcswhich])
+	    if (which_limits[rcswhich] == ANY)
 		which_limits[rcswhich] = type;
 	    if (shellparm[shelltype].lprm[rcswhich].pfx) {
 		if (shellparm[shelltype].both && limits[rcswhich].rlim_cur == limits[rcswhich].rlim_max) {
@@ -564,6 +563,7 @@ resource_num(int which, int ch, const char *str)
 		    break;
 		case 'w': case 'W':	/* weeks */
 		    tim *= (60L * 60L * 24L * 7L);
+		    break;
 		case 'y': case 'Y':	/* Years */
 		    tim *= (60L * 60L * 24L * 365L);
 		}

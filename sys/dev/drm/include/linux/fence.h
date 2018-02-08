@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 François Tigeot
+ * Copyright (c) 2015-2018 François Tigeot <ftigeot@wolfpond.org>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,5 +26,37 @@
 
 #ifndef _LINUX_FENCE_H_
 #define _LINUX_FENCE_H_
+
+#include <linux/err.h>
+#include <linux/wait.h>
+#include <linux/list.h>
+#include <linux/bitops.h>
+#include <linux/kref.h>
+#include <linux/sched.h>
+#include <linux/printk.h>
+#include <linux/rcupdate.h>
+
+struct fence;
+struct fence_cb;
+
+static inline signed long
+fence_wait(struct fence *fence, bool intr)
+{
+	kprintf("fence_wait(): Not implemented\n");
+	return 0;
+}
+
+static inline void
+fence_put(struct fence *fence)
+{
+	kprintf("fence_put(): Not implemented\n");
+}
+
+static inline int
+fence_signal(struct fence *fence)
+{
+	kprintf("fence_signal(): Not implemented\n");
+	return 0;
+}
 
 #endif	/* _LINUX_FENCE_H_ */

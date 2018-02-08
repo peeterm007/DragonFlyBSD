@@ -690,7 +690,7 @@ kvm_ktrinfo(void *kptr, struct save_ctx *ctx)
 		return(NULL);
 	if (ctx->save_kptr != kptr) {
 		if (kvm_read(kd, (uintptr_t)kptr, ki, sizeof(*ki)) == -1) {
-			bzero(&ki, sizeof(*ki));
+			bzero(ki, sizeof(*ki));
 		} else {
 			ctx->save_kptr = kptr;
 		}
@@ -1251,8 +1251,8 @@ conversion_size(const char *fmt, enum argument_class *argclass)
 			convsize = sizeof(double);
 		else
 			convsize = sizeof(float);
-		break;
 		*argclass = ARGCLASS_FP;
+		break;
 	case 's':
 		convsize = sizeof(char *);
 		*argclass = ARGCLASS_INTEGER;
