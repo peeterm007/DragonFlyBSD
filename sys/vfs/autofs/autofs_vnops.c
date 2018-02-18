@@ -232,9 +232,9 @@ autofs_nresolve(struct vop_nresolve_args *ap)
 		return (0);
 	}
 
-	lockmgr(&amp->am_lock, LK_SHARED);
+	mtx_lock_sh_quick(&amp->am_lock);
 	error = autofs_node_find(anp, ncp->nc_name, ncp->nc_nlen, &child);
-	lockmgr(&amp->am_lock, LK_RELEASE);
+	mtx_unlock_sh(&amp->am_lock);
 
 	if (error) {
 		cache_setvp(nch, NULL);
@@ -272,9 +272,9 @@ autofs_nmkdir(struct vop_nmkdir_args *ap)
 	if (autofs_ignore_thread() == false)
 		return (EPERM);
 
-	lockmgr(&amp->am_lock, LK_EXCLUSIVE);
+	mtx_lock_ex_quick(&amp->am_lock);
 	error = autofs_node_new(anp, amp, ncp->nc_name, ncp->nc_nlen, &child);
-	lockmgr(&amp->am_lock, LK_RELEASE);
+	mtx_unlock_ex(&amp->am_lock);
 	KKASSERT(error == 0);
 
 	error = autofs_node_vn(child, dvp->v_mount, LK_EXCLUSIVE, &vp);
@@ -368,7 +368,7 @@ autofs_readdir(struct vop_readdir_args *ap)
 	/*
 	 * Write out the directory entries for subdirectories.
 	 */
-	lockmgr(&amp->am_lock, LK_SHARED);
+	mtx_lock_sh_quick(&amp->am_lock);
 	RB_FOREACH(child, autofs_node_tree, &anp->an_children) {
 		/*
 		 * Check the offset to skip entries returned by previous
@@ -383,7 +383,7 @@ autofs_readdir(struct vop_readdir_args *ap)
 		 * Prevent seeking into the middle of dirent.
 		 */
 		if (uio->uio_offset != reclens) {
-			lockmgr(&amp->am_lock, LK_RELEASE);
+			mtx_unlock_sh(&amp->am_lock);
 			return (EINVAL);
 		}
 
@@ -391,11 +391,11 @@ autofs_readdir(struct vop_readdir_args *ap)
 		    child->an_ino, &reclen);
 		reclens += reclen;
 		if (error) {
-			lockmgr(&amp->am_lock, LK_RELEASE);
+			mtx_unlock_sh(&amp->am_lock);
 			goto out;
 		}
 	}
-	lockmgr(&amp->am_lock, LK_RELEASE);
+	mtx_unlock_sh(&amp->am_lock);
 
 	if (ap->a_eofflag != NULL)
 		*ap->a_eofflag = TRUE;
@@ -427,10 +427,10 @@ autofs_reclaim(struct vop_reclaim_args *ap)
 	 * We do not free autofs_node here; instead we are
 	 * destroying them in autofs_node_delete().
 	 */
-	lockmgr(&anp->an_vnode_lock, LK_EXCLUSIVE);
+	mtx_lock_ex_quick(&anp->an_vnode_lock);
 	anp->an_vnode = NULL;
 	vp->v_data = NULL;
-	lockmgr(&anp->an_vnode_lock, LK_RELEASE);
+	mtx_unlock_ex(&anp->an_vnode_lock);
 
 	return (0);
 }
@@ -439,25 +439,14 @@ static int
 autofs_mountctl(struct vop_mountctl_args *ap)
 {
 	struct mount *mp;
-#if 0
-	struct autofs_mount *amp;
-#endif
 	int res;
 
 	mp = ap->a_head.a_ops->head.vv_mount;
 	lwkt_gettoken(&mp->mnt_token);
 
 	switch (ap->a_op) {
-#if 0
-	case MOUNTCTL_SET_EXPORT:
-		amp = (struct autofs_mount*)mp->mnt_data;
-		if (ap->a_ctllen != sizeof(struct export_args))
-			res = (EINVAL);
-		else
-			res = vfs_export(mp, &amp->am_export,
-			    (const struct export_args*)ap->a_ctl);
-		break;
-#endif
+	//case ...:
+	//	break;
 	default:
 		res = vop_stdmountctl(ap);
 		break;
@@ -473,7 +462,8 @@ autofs_print(struct vop_print_args *ap)
 	struct autofs_node *anp = VTOI(ap->a_vp);
 
 	kprintf("tag VT_AUTOFS, node %p, ino %jd, name %s, cached %d, retries %d, wildcards %d\n",
-	    anp, (intmax_t)anp->an_ino, anp->an_name, anp->an_cached, anp->an_retries, anp->an_wildcards);
+	    anp, (intmax_t)anp->an_ino, anp->an_name, anp->an_cached,
+	    anp->an_retries, anp->an_wildcards);
 
 	return (0);
 }
@@ -490,9 +480,6 @@ struct vop_ops autofs_vnode_vops = {
 	.vop_reclaim =		autofs_reclaim,
 	.vop_mountctl =		autofs_mountctl,
 	.vop_print =		autofs_print,
-#if 0
-	.vop_nlookupdotdot =	NULL,
-#endif
 };
 
 int
@@ -501,10 +488,10 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 {
 	struct autofs_node *anp;
 
-	AUTOFS_ASSERT_XLOCKED(amp);
+	KKASSERT(mtx_islocked_ex(&amp->am_lock));
 
 	if (parent != NULL) {
-		AUTOFS_ASSERT_XLOCKED(parent->an_mount);
+		KKASSERT(mtx_islocked_ex(&parent->an_mount->am_lock));
 		KASSERT(autofs_node_find(parent, name, namelen, NULL) == ENOENT,
 		    ("node \"%s\" already exists", name));
 	}
@@ -516,7 +503,7 @@ autofs_node_new(struct autofs_node *parent, struct autofs_mount *amp,
 		anp->an_name = kstrdup(name, M_AUTOFS);
 	anp->an_ino = amp->am_last_ino++;
 	callout_init(&anp->an_callout);
-	lockinit(&anp->an_vnode_lock, "autofsvnlk", 0, 0);
+	mtx_init(&anp->an_vnode_lock, "autofsvnlk");
 	getnanotime(&anp->an_ctime);
 	anp->an_parent = parent;
 	anp->an_mount = amp;
@@ -540,7 +527,7 @@ autofs_node_find(struct autofs_node *parent, const char *name,
 	struct autofs_node *anp, find;
 	int error;
 
-	AUTOFS_ASSERT_LOCKED(parent->an_mount);
+	KKASSERT(mtx_islocked(&parent->an_mount->am_lock));
 
 	if (namelen >= 0)
 		find.an_name = kstrndup(name, namelen, M_AUTOFS);
@@ -564,7 +551,7 @@ autofs_node_find(struct autofs_node *parent, const char *name,
 void
 autofs_node_delete(struct autofs_node *anp)
 {
-	AUTOFS_ASSERT_XLOCKED(anp->an_mount);
+	KKASSERT(mtx_islocked_ex(&anp->an_mount->am_lock));
 	KASSERT(RB_EMPTY(&anp->an_children), ("have children"));
 
 	callout_drain(&anp->an_callout);
@@ -572,7 +559,7 @@ autofs_node_delete(struct autofs_node *anp)
 	if (anp->an_parent != NULL)
 		RB_REMOVE(autofs_node_tree, &anp->an_parent->an_children, anp);
 
-	lockuninit(&anp->an_vnode_lock);
+	mtx_uninit(&anp->an_vnode_lock);
 	kfree(anp->an_name, M_AUTOFS);
 	objcache_put(autofs_node_objcache, anp);
 }
@@ -584,13 +571,13 @@ autofs_node_vn(struct autofs_node *anp, struct mount *mp, int flags,
 	struct vnode *vp = NULL;
 	int error;
 retry:
-	AUTOFS_ASSERT_UNLOCKED(anp->an_mount);
-	lockmgr(&anp->an_vnode_lock, LK_EXCLUSIVE);
+	KKASSERT(mtx_notlocked(&anp->an_mount->am_lock));
+	mtx_lock_ex_quick(&anp->an_vnode_lock);
 
 	vp = anp->an_vnode;
 	if (vp != NULL) {
 		vhold(vp);
-		lockmgr(&anp->an_vnode_lock, LK_RELEASE);
+		mtx_unlock_ex(&anp->an_vnode_lock);
 
 		error = vget(vp, flags | LK_RETRY);
 		if (error) {
@@ -603,7 +590,7 @@ retry:
 		return (0);
 	}
 
-	lockmgr(&anp->an_vnode_lock, LK_RELEASE);
+	mtx_unlock_ex(&anp->an_vnode_lock);
 
 	error = getnewvnode(VT_AUTOFS, mp, &vp, VLKTIMEOUT, LK_CANRECURSE);
 	if (error)

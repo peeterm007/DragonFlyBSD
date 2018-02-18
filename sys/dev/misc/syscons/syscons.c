@@ -157,11 +157,10 @@ TUNABLE_INT("kern.kms_columns", &desired_cols);
 
 static	int	debugger;
 static	cdev_t	cctl_dev;
-#if 0
 static	timeout_t blink_screen_callout;
-#endif
 static  void	sc_blink_screen(scr_stat *scp);
 static	struct mtx	syscons_mtx = MTX_INITIALIZER("syscons");
+static	struct lock	syscons_blink_lk = LOCK_INITIALIZER("sblnk", 0, 0);
 
 /* prototypes */
 static int scvidprobe(int unit, int flags, int cons);
@@ -539,6 +538,7 @@ sc_attach_unit(int unit, int flags)
     int vc;
     cdev_t dev;
     flags &= ~SC_KERNEL_CONSOLE;
+    char tbuf[MAKEDEV_MINNBUF];
 
     if ((flags & SC_EFI_FB) && probe_efi_fb(0) != 0)
 	flags &= ~SC_EFI_FB;
@@ -577,9 +577,9 @@ sc_attach_unit(int unit, int flags)
     if (flags & SC_KERNEL_CONSOLE) {
 	KKASSERT(sc->dev == NULL);
 	sc->dev = kmalloc(sizeof(cdev_t)*sc->vtys, M_SYSCONS, M_WAITOK|M_ZERO);
-	sc->dev[0] = make_dev(&sc_ops, sc_console_unit*MAXCONS, UID_ROOT, 
-			      GID_WHEEL, 0600, 
-			      "ttyv%r", sc_console_unit*MAXCONS);
+	sc->dev[0] = make_dev(&sc_ops, sc_console_unit*MAXCONS, UID_ROOT,
+			      GID_WHEEL, 0600, "ttyv%s", makedev_unit_b32(tbuf,
+			      sc_console_unit * MAXCONS));
 	sc->dev[0]->si_tty = ttymalloc(sc->dev[0]->si_tty);
 	sc->dev[0]->si_drv1 = sc_console;
     }
@@ -633,8 +633,8 @@ sc_attach_unit(int unit, int flags)
      */
     for (vc = 1; vc < sc->vtys; vc++) {
 	dev = make_dev(&sc_ops, vc + unit * MAXCONS,
-			UID_ROOT, GID_WHEEL,
-			0600, "ttyv%r", vc + unit * MAXCONS);
+			UID_ROOT, GID_WHEEL, 0600, "ttyv%s",
+			makedev_unit_b32(tbuf, vc + unit * MAXCONS));
 	sc->dev[vc] = dev;
     }
     cctl_dev = make_dev(&sc_ops, SC_CONSOLECTL,
@@ -3187,6 +3187,7 @@ scinit(int unit, int flags)
     sc_softc_t *sc;
     scr_stat *scp;
     video_adapter_t *adp;
+    char tbuf[MAKEDEV_MINNBUF];
     int col;
     int row;
     int i;
@@ -3286,8 +3287,9 @@ scinit(int unit, int flags)
 	    /* assert(sc_malloc) */
 	    sc->dev = kmalloc(sizeof(cdev_t)*sc->vtys, M_SYSCONS, M_WAITOK | M_ZERO);
 
-	    sc->dev[0] = make_dev(&sc_ops, unit*MAXCONS, UID_ROOT, 
-				GID_WHEEL, 0600, "ttyv%r", unit*MAXCONS);
+	    sc->dev[0] = make_dev(&sc_ops, unit*MAXCONS, UID_ROOT,
+				  GID_WHEEL, 0600, "ttyv%s",
+				  makedev_unit_b32(tbuf, unit * MAXCONS));
 
 	    sc->dev[0]->si_tty = ttymalloc(sc->dev[0]->si_tty);
 	    scp = alloc_scp(sc, sc->first_vty);
@@ -3572,7 +3574,7 @@ init_scp(sc_softc_t *sc, int vty, scr_stat *scp)
     scp->status = 0;
     scp->mode = sc->initial_mode;
     scp->fbi_generation = sc->fbi_generation;
-    callout_init_mp(&scp->blink_screen_ch);
+    callout_init_lk(&scp->blink_screen_ch, &syscons_blink_lk);
     if (scp->sc->fbi == NULL) {
 	lwkt_gettoken(&tty_token);
 	(*vidsw[sc->adapter]->get_info)(sc->adp, scp->mode, &info);
@@ -4284,7 +4286,9 @@ sc_bell(scr_stat *scp, int pitch, int duration)
 	scp->sc->blink_in_progress = 3;
 	if (scp != scp->sc->cur_scp)
 	    scp->sc->blink_in_progress += 2;
+	lockmgr(&syscons_blink_lk, LK_EXCLUSIVE);
 	sc_blink_screen(scp->sc->cur_scp);
+	lockmgr(&syscons_blink_lk, LK_RELEASE);
     } else if (duration != 0 && pitch != 0) {
 	if (scp != scp->sc->cur_scp)
 	    pitch *= 2;
@@ -4293,8 +4297,8 @@ sc_bell(scr_stat *scp, int pitch, int duration)
 }
 
 /*
- * Two versions of blink_screen(), one called from the console path
- * with the syscons locked, and one called from a timer callout.
+ * Blink the screen, called with the syscons_mtx and syscons_blink_lk
+ * held.  Can be called directly or via the callout.
  */
 static void
 sc_blink_screen(scr_stat *scp)
@@ -4308,40 +4312,29 @@ sc_blink_screen(scr_stat *scp)
 	(*scp->rndr->draw)(scp, 0, scp->xsize*scp->ysize,
 			   scp->sc->blink_in_progress & 1);
 	scp->sc->blink_in_progress--;
-    }
-}
-
-#if 0
-static void
-blink_screen_callout(void *arg)
-{
-    scr_stat *scp = arg;
-    struct tty *tp;
-
-    if (ISGRAPHSC(scp) || (scp->sc->blink_in_progress <= 1)) {
-	syscons_lock();
-	scp->sc->blink_in_progress = 0;
-    	mark_all(scp);
-	syscons_unlock();
-	tp = VIRTUAL_TTY(scp->sc, scp->index);
-	if (ISTTYOPEN(tp))
-	    scstart(tp);
-	if (scp->sc->delayed_next_scr) {
-	    syscons_lock();
-	    sc_switch_scr(scp->sc, scp->sc->delayed_next_scr - 1);
-	    syscons_unlock();
-	}
-    } else {
-	syscons_lock();
-	(*scp->rndr->draw)(scp, 0, scp->xsize*scp->ysize, 
-			   scp->sc->blink_in_progress & 1);
-	scp->sc->blink_in_progress--;
-	syscons_unlock();
 	callout_reset(&scp->blink_screen_ch, hz / 10,
 		      blink_screen_callout, scp);
     }
 }
-#endif
+
+/*
+ * Screen blink callout.  Note that there is a lock order
+ * reversal between syscons_blink_lk and the syscons lock.
+ * Acquire the syscons lock non-blocking.
+ */
+static void
+blink_screen_callout(void *arg)
+{
+    scr_stat *scp = arg;
+
+    if (syscons_lock_nonblock() == 0) {
+	sc_blink_screen(scp);
+	syscons_unlock();
+    } else {
+	callout_reset(&scp->blink_screen_ch, hz / 10,
+		      blink_screen_callout, scp);
+    }
+}
 
 /*
  * Allocate active keyboard. Try to allocate "kbdmux" keyboard first, and,

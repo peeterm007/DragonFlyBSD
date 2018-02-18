@@ -455,7 +455,7 @@ db_command_loop(void)
 	db_prev = db_dot;
 	db_next = db_dot;
 
-	db_cmd_loop_done = false;
+	db_cmd_loop_done = FALSE;
 	while (!db_cmd_loop_done) {
 
 	    setjmp(db_jmpbuf);
@@ -598,7 +598,7 @@ db_fncall(db_expr_t dummy1, boolean_t dummy2, db_expr_t dummy3, char *dummy4)
 		retval = 0;
 		break;
 	}
-	db_printf("%#lr\n", (long)retval);
+	db_printf("%s\n", db_num_to_str(retval));
 }
 
 /* Enter GDB remote protocol debugger on the next trap. */

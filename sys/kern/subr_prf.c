@@ -117,6 +117,11 @@ static int	kprintf_logging = TOLOG | TOCONS;
 SYSCTL_INT(_kern, OID_AUTO, kprintf_logging, CTLFLAG_RW,
     &kprintf_logging, 0, "");
 
+static int ptr_restrict = 0;
+TUNABLE_INT("security.ptr_restrict", &ptr_restrict);
+SYSCTL_INT(_security, OID_AUTO, ptr_restrict, CTLFLAG_RW, &ptr_restrict, 0,
+    "Prevent leaking the kernel pointers back to userland");
+
 static int unprivileged_read_msgbuf = 1;
 SYSCTL_INT(_security, OID_AUTO, unprivileged_read_msgbuf, CTLFLAG_RW,
     &unprivileged_read_msgbuf, 0,
@@ -148,7 +153,7 @@ uprintf(const char *fmt, ...)
 		pca.tty = p->p_session->s_ttyp;
 		pca.flags = TOTTY;
 
-		retval = kvcprintf(fmt, kputchar, &pca, 10, ap);
+		retval = kvcprintf(fmt, kputchar, &pca, ap);
 		__va_end(ap);
 	}
 	return (retval);
@@ -193,7 +198,7 @@ tprintf(tpr_t tpr, const char *fmt, ...)
 	pca.tty = tp;
 	pca.flags = flags;
 	pca.pri = LOG_INFO;
-	retval = kvcprintf(fmt, kputchar, &pca, 10, ap);
+	retval = kvcprintf(fmt, kputchar, &pca, ap);
 	__va_end(ap);
 	msgbuftrigger = 1;
 	return (retval);
@@ -214,7 +219,7 @@ ttyprintf(struct tty *tp, const char *fmt, ...)
 	__va_start(ap, fmt);
 	pca.tty = tp;
 	pca.flags = TOTTY;
-	retval = kvcprintf(fmt, kputchar, &pca, 10, ap);
+	retval = kvcprintf(fmt, kputchar, &pca, ap);
 	__va_end(ap);
 	return (retval);
 }
@@ -239,7 +244,7 @@ log(int level, const char *fmt, ...)
 		pca.flags = TOCONS;
 
 	__va_start(ap, fmt);
-	retval = kvcprintf(fmt, kputchar, &pca, 10, ap);
+	retval = kvcprintf(fmt, kputchar, &pca, ap);
 	__va_end(ap);
 
 	msgbuftrigger = 1;
@@ -308,7 +313,7 @@ kprintf(const char *fmt, ...)
 	pca.tty = NULL;
 	pca.flags = kprintf_logging & ~TOTTY;
 	pca.pri = -1;
-	retval = kvcprintf(fmt, kputchar, &pca, 10, ap);
+	retval = kvcprintf(fmt, kputchar, &pca, ap);
 	__va_end(ap);
 	if (!panicstr)
 		msgbuftrigger = 1;
@@ -328,7 +333,7 @@ kvprintf(const char *fmt, __va_list ap)
 	pca.tty = NULL;
 	pca.flags = kprintf_logging & ~TOTTY;
 	pca.pri = -1;
-	retval = kvcprintf(fmt, kputchar, &pca, 10, ap);
+	retval = kvcprintf(fmt, kputchar, &pca, ap);
 	if (!panicstr)
 		msgbuftrigger = 1;
 	consintr = savintr;		/* reenable interrupts */
@@ -401,7 +406,7 @@ ksprintf(char *buf, const char *cfmt, ...)
 	__va_list ap;
 
 	__va_start(ap, cfmt);
-	retval = kvcprintf(cfmt, NULL, buf, 10, ap);
+	retval = kvcprintf(cfmt, NULL, buf, ap);
 	buf[retval] = '\0';
 	__va_end(ap);
 	return (retval);
@@ -415,7 +420,7 @@ kvsprintf(char *buf, const char *cfmt, __va_list ap)
 {
 	int retval;
 
-	retval = kvcprintf(cfmt, NULL, buf, 10, ap);
+	retval = kvcprintf(cfmt, NULL, buf, ap);
 	buf[retval] = '\0';
 	return (retval);
 }
@@ -446,41 +451,14 @@ kvsnprintf(char *str, size_t size, const char *format, __va_list ap)
 
 	info.str = str;
 	info.remain = size;
-	retval = kvcprintf(format, snprintf_func, &info, 10, ap);
+	retval = kvcprintf(format, snprintf_func, &info, ap);
 	if (info.remain >= 1)
 		*info.str++ = '\0';
 	return (retval);
 }
 
 int
-ksnrprintf(char *str, size_t size, int radix, const char *format, ...)
-{
-	int retval;
-	__va_list ap;
-
-	__va_start(ap, format);
-	retval = kvsnrprintf(str, size, radix, format, ap);
-	__va_end(ap);
-	return(retval);
-}
-
-int
-kvsnrprintf(char *str, size_t size, int radix, const char *format, __va_list ap)
-{
-	struct snprintf_arg info;
-	int retval;
-
-	info.str = str;
-	info.remain = size;
-	retval = kvcprintf(format, snprintf_func, &info, radix, ap);
-	if (info.remain >= 1)
-		*info.str++ = '\0';
-	return (retval);
-}
-
-int
-kvasnrprintf(char **strp, size_t size, int radix,
-	     const char *format, __va_list ap)
+kvasnprintf(char **strp, size_t size, const char *format, __va_list ap)
 {
 	struct snprintf_arg info;
 	int retval;
@@ -488,7 +466,7 @@ kvasnrprintf(char **strp, size_t size, int radix,
 	*strp = kmalloc(size, M_TEMP, M_WAITOK);
 	info.str = *strp;
 	info.remain = size;
-	retval = kvcprintf(format, snprintf_func, &info, radix, ap);
+	retval = kvcprintf(format, snprintf_func, &info, ap);
 	if (info.remain >= 1)
 		*info.str++ = '\0';
 	return (retval);
@@ -541,10 +519,10 @@ ksprintn(char *nbuf, uintmax_t num, int base, int *lenp, int upper)
  *
  * Two additional formats:
  *
- * The format %b is supported to decode error registers.
+ * The format %pb%i is supported to decode error registers.
  * Its usage is:
  *
- *	kprintf("reg=%b\n", regval, "<base><arg>*");
+ *	kprintf("reg=%pb%i\n", "<base><arg>*", regval);
  *
  * where <base> is the output base expressed as a control character, e.g.
  * \10 gives octal; \20 gives hex.  Each arg is a sequence of characters,
@@ -552,7 +530,7 @@ ksprintn(char *nbuf, uintmax_t num, int base, int *lenp, int upper)
  * the next characters (up to a control character, i.e. a character <= 32),
  * give the name of the register.  Thus:
  *
- *	kvcprintf("reg=%b\n", 3, "\10\2BITTWO\1BITONE\n");
+ *	kvcprintf("reg=%pb%i\n", "\10\2BITTWO\1BITONE\n", 3);
  *
  * would produce output:
  *
@@ -562,8 +540,7 @@ ksprintn(char *nbuf, uintmax_t num, int base, int *lenp, int upper)
 #define PCHAR(c) {int cc=(c); if(func) (*func)(cc,arg); else *d++=cc; retval++;}
 
 int
-kvcprintf(char const *fmt, void (*func)(int, void*), void *arg,
-	  int radix, __va_list ap)
+kvcprintf(char const *fmt, void (*func)(int, void*), void *arg, __va_list ap)
 {
 	char nbuf[MAXNBUF];
 	char *d;
@@ -576,6 +553,7 @@ kvcprintf(char const *fmt, void (*func)(int, void*), void *arg,
 	char padc;
 	int retval = 0, stop = 0;
 	int usespin;
+	int ddb_active;
 
 	/*
 	 * Make a supreme effort to avoid reentrant panics or deadlocks.
@@ -591,6 +569,12 @@ kvcprintf(char const *fmt, void (*func)(int, void*), void *arg,
 		atomic_set_long(&mycpu->gd_flags, GDF_KPRINTF);
 	}
 
+#ifdef DDB
+	ddb_active = db_active;
+#else
+	ddb_active = 0;
+#endif
+
 	num = 0;
 	if (!func)
 		d = (char *) arg;
@@ -599,9 +583,6 @@ kvcprintf(char const *fmt, void (*func)(int, void*), void *arg,
 
 	if (fmt == NULL)
 		fmt = "(fmt null)\n";
-
-	if (radix < 2 || radix > 36)
-		radix = 10;
 
 	usespin = (func == kputchar &&
 		   (kprintf_logging & TONOSPIN) == 0 &&
@@ -674,29 +655,6 @@ reswitch:
 			else
 				width = n;
 			goto reswitch;
-		case 'b':
-			num = (u_int)__va_arg(ap, int);
-			p = __va_arg(ap, char *);
-			for (q = ksprintn(nbuf, num, *p++, NULL, 0); *q;)
-				PCHAR(*q--);
-
-			if (num == 0)
-				break;
-
-			for (tmp = 0; *p;) {
-				n = *p++;
-				if (num & (1 << (n - 1))) {
-					PCHAR(tmp ? ',' : '<');
-					for (; (n = *p) > ' '; ++p)
-						PCHAR(n);
-					tmp = 1;
-				} else
-					for (; *p > ' '; ++p)
-						continue;
-			}
-			if (tmp)
-				PCHAR('>');
-			break;
 		case 'c':
 			PCHAR(__va_arg(ap, int));
 			break;
@@ -740,19 +698,50 @@ reswitch:
 			base = 8;
 			goto handle_nosign;
 		case 'p':
+			/* peek if this is a /b/ hiding as /p/ or not */
+			if (fmt[0] == 'b' && fmt[1] == '%' && fmt[2] == 'i') {
+				fmt += 3; /* consume "b%i" */
+				p = __va_arg(ap, char *);
+				num = (u_int)__va_arg(ap, int);
+				for (q = ksprintn(nbuf, num, *p++, NULL, 0);*q;)
+					PCHAR(*q--);
+
+				if (num == 0)
+					break;
+
+				for (tmp = 0; *p;) {
+					n = *p++;
+					if (num & (1 << (n - 1))) {
+						PCHAR(tmp ? ',' : '<');
+						for (; (n = *p) > ' '; ++p)
+							PCHAR(n);
+						tmp = 1;
+					} else {
+						for (; *p > ' '; ++p)
+							continue;
+					}
+				}
+				if (tmp)
+					PCHAR('>');
+				break;
+			}
 			base = 16;
 			sharpflag = (width == 0);
 			sign = 0;
 			num = (uintptr_t)__va_arg(ap, void *);
+			if (ptr_restrict && fmt[0] != 'x' &&
+			    !(panicstr || dumping || ddb_active)) {
+				if (ptr_restrict == 1) {
+					/* zero out upper bits */
+					num &= 0xffffffUL;
+				} else {
+					num = 0xc0ffee;
+				}
+			}
 			goto number;
 		case 'q':
 			qflag = 1;
 			goto reswitch;
-		case 'r':
-			base = radix;
-			if (sign)
-				goto handle_sign;
-			goto handle_nosign;
 		case 's':
 			p = __va_arg(ap, char *);
 			if (p == NULL)

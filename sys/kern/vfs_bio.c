@@ -3398,6 +3398,8 @@ vn_strategy(struct vnode *vp, struct bio *bio)
 /*
  * vn_cache_strategy()
  *
+ * Returns 1 if the interrupt was successful, 0 if not.
+ *
  * NOTE: This function supports the KVABIO API wherein b_data might not
  *	 be synchronized to the current cpu.
  */
@@ -4357,7 +4359,9 @@ bkvareset(struct buf *bp)
 
 /*
  * The buffer will be used by the caller on the caller's cpu, synchronize
- * its data to the current cpu.
+ * its data to the current cpu.  Caller must control the buffer by holding
+ * its lock, but calling cpu does not necessarily have to be the owner of
+ * the lock (i.e. HAMMER2's concurrent I/O accessors).
  *
  * If B_KVABIO is not set, the buffer is already fully synchronized.
  */
@@ -4586,7 +4590,7 @@ DB_SHOW_COMMAND(buffer, db_show_buffer)
 		return;
 	}
 
-	db_printf("b_flags = 0x%b\n", (u_int)bp->b_flags, PRINT_BUF_FLAGS);
+	db_printf("b_flags = 0x%pb%i\n", PRINT_BUF_FLAGS, bp->b_flags);
 	db_printf("b_cmd = %d\n", bp->b_cmd);
 	db_printf("b_error = %d, b_bufsize = %d, b_bcount = %d, "
 		  "b_resid = %d\n, b_data = %p, "

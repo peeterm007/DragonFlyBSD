@@ -41,6 +41,7 @@
 #include <sys/objcache.h>
 #include <sys/tree.h>
 #include <sys/lock.h>
+#include <sys/mutex2.h>
 #include <sys/condvar.h>
 #include <sys/mount.h>
 #include <sys/vnode.h>
@@ -89,14 +90,6 @@ extern int autofs_mount_on_stat;
 	kprintf("### %s(%s): " X,			\
 	    __func__, curproc->p_comm, ## __VA_ARGS__)
 
-#define AUTOFS_LOCK_STATUS(lock)	(lockstatus((lock), curthread))
-#define AUTOFS_ASSERT_LOCKED(X)				\
-	KKASSERT(AUTOFS_LOCK_STATUS(&(X)->am_lock) & (LK_EXCLUSIVE | LK_SHARED))
-#define AUTOFS_ASSERT_XLOCKED(X)			\
-	KKASSERT(AUTOFS_LOCK_STATUS(&(X)->am_lock) == LK_EXCLUSIVE)
-#define AUTOFS_ASSERT_UNLOCKED(X)			\
-	KKASSERT(AUTOFS_LOCK_STATUS(&(X)->am_lock) == 0)
-
 struct autofs_node {
 	RB_ENTRY(autofs_node)		an_link;
 	char				*an_name;
@@ -106,7 +99,7 @@ struct autofs_node {
 	    autofs_node)		an_children;
 	struct autofs_mount		*an_mount;
 	struct vnode			*an_vnode;
-	struct lock			an_vnode_lock;
+	mtx_t				an_vnode_lock;
 	bool				an_cached;
 	bool				an_wildcards;
 	struct callout			an_callout;
@@ -118,15 +111,12 @@ struct autofs_mount {
 	TAILQ_ENTRY(autofs_mount)	am_next;
 	struct autofs_node		*am_root;
 	struct mount			*am_mp;
-	struct lock			am_lock;
+	mtx_t				am_lock;
 	char				am_from[MAXPATHLEN];
 	char				am_on[MAXPATHLEN];
 	char				am_options[MAXPATHLEN];
 	char				am_prefix[MAXPATHLEN];
 	ino_t				am_last_ino;
-#if 0
-	struct netexport		am_export;
-#endif
 };
 
 struct autofs_request {

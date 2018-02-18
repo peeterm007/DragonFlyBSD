@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998 Daniel Eischen <eischen@vigrid.com>.
+ * Copyright (c) 2017 Conrad Meyer <cem@FreeBSD.org>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -10,14 +10,8 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by Daniel Eischen.
- * 4. Neither the name of the author nor the names of any co-contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY DANIEL EISCHEN AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
@@ -28,28 +22,53 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD: src/lib/libc_r/uthread/uthread_attr_getscope.c,v 1.4.2.1 2002/10/22 14:44:02 fjoe Exp $
  */
-#include <errno.h>
-#include <pthread.h>
-#include "pthread_private.h"
+
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "fstyp.h"
+
+struct exfat_vbr {
+	char		ev_jmp[3];
+	char		ev_fsname[8];
+	char		ev_zeros[53];
+	uint64_t	ev_part_offset;
+	uint64_t	ev_vol_length;
+	uint32_t	ev_fat_offset;
+	uint32_t	ev_fat_length;
+	uint32_t	ev_cluster_offset;
+	uint32_t	ev_cluster_count;
+	uint32_t	ev_rootdir_cluster;
+	uint32_t	ev_vol_serial;
+	uint16_t	ev_fs_revision;
+	uint16_t	ev_vol_flags;
+	uint8_t		ev_log_bytes_per_sect;
+	uint8_t		ev_log_sect_per_clust;
+	uint8_t		ev_num_fats;
+	uint8_t		ev_drive_sel;
+	uint8_t		ev_percent_used;
+} __packed;
 
 int
-_pthread_attr_getscope(const pthread_attr_t * __restrict attr,
-    int * __restrict contentionscope)
+fstyp_exfat(FILE *fp, char *label, size_t size)
 {
-	int ret = 0;
+	struct exfat_vbr *ev;
 
-	if ((attr == NULL) || (*attr == NULL) || (contentionscope == NULL))
-		/* Return an invalid argument: */
-		ret = EINVAL;
+	ev = (struct exfat_vbr *)read_buf(fp, 0, 512);
+	if (ev == NULL || strncmp(ev->ev_fsname, "EXFAT   ", 8) != 0)
+		goto fail;
 
-	else
-		*contentionscope = (*attr)->flags & PTHREAD_SCOPE_SYSTEM ?
-		    PTHREAD_SCOPE_SYSTEM : PTHREAD_SCOPE_PROCESS;
+	/*
+	 * Reading the volume label requires walking the root directory to look
+	 * for a special label file.  Left as an exercise for the reader.
+	 */
+	free(ev);
+	return (0);
 
-	return(ret);
+fail:
+	free(ev);
+	return (1);
 }
-
-__strong_reference(_pthread_attr_getscope, pthread_attr_getscope);

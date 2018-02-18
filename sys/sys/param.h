@@ -167,9 +167,10 @@
  * 500103 - faith removal
  * 500104 - cfmakesane()
  * 500105 - _SC_LEVEL1_DCACHE_LINESIZE sysconf()
+ * 500106 - %b and %r formats removal
  */
 #undef __DragonFly_version
-#define __DragonFly_version 500105	/* propagated to newvers */
+#define __DragonFly_version 500106	/* propagated to newvers */
 
 #include <sys/_null.h>
 
@@ -293,7 +294,7 @@
 #ifndef howmany
 #define howmany(x, y)	(((x)+((y)-1))/(y))
 #endif
-#define nitems(x)	(sizeof((x)) / sizeof((x)[0]))
+#define nitems(x)	NELEM(x)
 #define rounddown(x, y)	(((x)/(y))*(y))
 #define rounddown2(x, y) ((x) & ~((y) - 1))	   /* y power of two */
 #define roundup(x, y)	((((x)+((y)-1))/(y))*(y))  /* to any y */

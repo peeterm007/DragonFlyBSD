@@ -30,7 +30,6 @@
  * SUCH DAMAGE.
  *
  * $FreeBSD: src/games/fish/fish.c,v 1.9 1999/12/10 16:21:50 billf Exp $
- * $DragonFly: src/games/fish/fish.c,v 1.4 2005/07/31 20:40:26 swildner Exp $
  *
  * @(#) Copyright (c) 1990, 1993 The Regents of the University of California.  All rights reserved.
  * @(#)fish.c	8.1 (Berkeley) 5/31/93
@@ -39,6 +38,7 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,15 +53,17 @@
 #define	COMPUTER	0
 #define	OTHER(a)	(1 - (a))
 
-const char *cards[] = {
+static const char *cards[] = {
 	"A", "2", "3", "4", "5", "6", "7",
 	"8", "9", "10", "J", "Q", "K", NULL,
 };
 #define	PRC(card)	printf(" %s", cards[card])
 
-int promode;
-int asked[RANKS], comphand[RANKS], deck[RANKS];
-int userasked[RANKS], userhand[RANKS];
+static int promode;
+static int asked[RANKS], comphand[RANKS], deck[RANKS];
+static int userasked[RANKS], userhand[RANKS];
+
+extern char **environ;
 
 static void chkwinner(int, int *);
 static int compmove(void);
@@ -76,7 +78,7 @@ static int nrandom(int);
 static void printhand(int *);
 static void printplayer(int);
 static int promove(void);
-static void usage(void);
+static void usage(void) __dead2;
 static int usermove(void);
 
 int
@@ -154,9 +156,13 @@ usermove(void)
 			continue;
 		}
 		buf[strlen(buf) - 1] = '\0';
-		if (!strcasecmp(buf, "p") && !promode) {
-			promode = 1;
-			printf("Entering pro mode.\n");
+		if (!strcasecmp(buf, "p")) {
+			if (promode) {
+				printf("Already in pro mode.\n");
+			} else {
+				printf("Entering pro mode.\n");
+				promode = 1;
+			}
 			continue;
 		}
 		if (!strcasecmp(buf, "quit"))
@@ -419,8 +425,8 @@ nrandom(int n)
 static void
 instructions(void)
 {
-	int input;
-	char buf[1024];
+	int input, status, pid;
+	const char * const argv[] = {PATH_PAGER, PATH_INSTR, NULL};
 
 	printf("Would you like instructions (y or n)? ");
 	input = getchar();
@@ -428,8 +434,11 @@ instructions(void)
 	if (input != 'y')
 		return;
 
-	sprintf(buf, "%s %s", _PATH_MORE, _PATH_INSTR);
-	system(buf);
+	status = posix_spawnp(&pid, PATH_PAGER, NULL, NULL,
+	    __DECONST(char * const *, argv), environ);
+	if (status != 0) {
+		printf("Unable to spawn %s\n",PATH_PAGER);
+	}
 	printf("Hit return to continue...\n");
 	while ((input = getchar()) != EOF && input != '\n');
 }
